@@ -1,28 +1,33 @@
 # Personal Cloud Storage (PWA)
 
-A mobile-friendly static PWA prototype. It can keep selected files in this browser using IndexedDB and upload them to Google Drive after you configure Google OAuth.
+A mobile-friendly static Progressive Web App (PWA). It stores selected files in this browser using IndexedDB and can upload them to Google Drive after OAuth is configured.
 
 ## Publish free with GitHub Pages
-1. Create a **public** GitHub repository named `personal-cloud-storage`.
-2. Upload the *contents* of this ZIP to the repository root (so `index.html` is at the top level, not inside a subfolder).
-3. Open **Settings → Pages**.
-4. Under Build and deployment, choose **Deploy from a branch**, branch `main`, folder `/(root)`, then Save.
-5. Wait for GitHub Pages to publish. The URL will look like `https://YOUR-USERNAME.github.io/personal-cloud-storage/`.
-6. Open that HTTPS URL on Android Chrome; use the browser menu and choose **Install app** or **Add to Home screen**.
 
-## Configure Google Drive uploads
-1. In Google Cloud Console, create/select a project and enable the Google Drive API.
-2. Configure Google Auth Platform / OAuth consent and add your Google account as a test user if requested.
-3. Create an OAuth client of type **Web application**.
-4. Add the exact deployed HTTPS origin (for example `https://YOUR-USERNAME.github.io`) under **Authorized JavaScript origins**.
-5. In the app, expand **Drive setup**, enter the OAuth Client ID, confirm the folder ID, save settings, and tap **Connect Drive**.
-6. Approve access and upload local files using the up-arrow button.
+1. Open [repository Pages settings](https://github.com/ronhalder93/personal-cloud-storage/settings/pages).
+2. Under **Build and deployment**, select **Deploy from a branch**.
+3. Choose branch **main** and folder **/(root)**, then press **Save**.
+4. Wait for GitHub Pages to finish publishing. This repository's expected URL is [https://ronhalder93.github.io/personal-cloud-storage/](https://ronhalder93.github.io/personal-cloud-storage/).
+5. Open the HTTPS site in Android Chrome. Use the browser menu and choose **Install app** or **Add to Home screen**.
 
-Never enter your Google password in the app. Do not share your OAuth client secret (this app does not need one in browser code).
+If the site shows 404, revisit Pages settings and check the deployment status in the repository's **Actions** tab.
 
-## Important limitations
-- This is a static PWA, not a native Android APK.
-- The live site is not published by creating this ZIP; you must complete the hosting steps above.
-- Drive upload and cloud-file listing are not active until OAuth is configured and tested. The app can list/download files visible under its `drive.file` permission; it does not automatically browse every pre-existing file in your Drive. Google Docs/Sheets/Slides files visible to the app are exported as PDF when downloaded. Cross-device conflict resolution is not implemented.
-- Local files are stored only in this browser/device. Clearing browser data can remove them. Keep backups of important files.
-- The existing Drive folder may require additional access/consent configuration; if upload fails, check the OAuth setup and folder permissions.
+## Configure Google Drive
+
+1. Open the [Google Drive API page](https://console.cloud.google.com/apis/library/drive.googleapis.com) and enable the API in your Google Cloud project.
+2. Configure Google Auth Platform / OAuth consent. If the app is in testing mode, add the Google account you will use as a test user.
+3. In [OAuth Clients](https://console.cloud.google.com/auth/clients), create an OAuth client with application type **Web application**.
+4. Under **Authorized JavaScript origins**, add exactly `https://ronhalder93.github.io` (no path and no trailing slash).
+5. In the app, expand **Drive setup**, paste the OAuth Client ID (ends in `.apps.googleusercontent.com`), optionally enter a Drive folder ID, and tap **Save settings**.
+6. Tap **Connect Drive** and approve the permission request. Upload local files with the **↑** button or **Sync pending**.
+
+Never enter your Google password in this app. Do not put an OAuth client secret in browser code; this app only needs the public client ID.
+
+## What works and what to know
+
+- **Local files:** Selected files are stored in IndexedDB on this browser/device. The browser may run out of storage; if saving fails, free space and retry. Clearing browser data can delete local copies.
+- **Drive upload/list/download:** These require a configured OAuth client and user consent. The app requests the `drive.file` scope; it does not automatically gain access to every existing file in your Drive.
+- **Google Workspace files:** Google Docs/Sheets/Slides files visible to the app are downloaded as PDF exports. Drive folders are listed but are not downloadable as individual files.
+- **Offline/PWA:** The app shell is cached for offline opening. A new service-worker version now activates immediately so updated app files can replace older cached files.
+- **Troubleshooting:** Drive errors now show Google's API error message when available. Check the OAuth origin, test-user configuration, API enablement, and any folder permissions.
+- **Not an APK:** This is a website/PWA, not a native Android application. Cross-device conflict resolution and a full backup system are not implemented. Keep separate backups of important files.
