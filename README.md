@@ -23,6 +23,6 @@ Never enter your Google password in the app. Do not share your OAuth client secr
 ## Important limitations
 - This is a static PWA, not a native Android APK.
 - The live site is not published by creating this ZIP; you must complete the hosting steps above.
-- Drive upload and cloud-file listing are not active until OAuth is configured and tested. The app can list/download files visible under its `drive.file` permission; it does not automatically browse every pre-existing file in your Drive. Google Workspace documents may need export handling. Cross-device conflict resolution is not implemented.
+- Drive upload and cloud-file listing are not active until OAuth is configured and tested. The app can list/download files visible under its `drive.file` permission; it does not automatically browse every pre-existing file in your Drive. Google Docs/Sheets/Slides files visible to the app are exported as PDF when downloaded. Cross-device conflict resolution is not implemented.
 - Local files are stored only in this browser/device. Clearing browser data can remove them. Keep backups of important files.
 - The existing Drive folder may require additional access/consent configuration; if upload fails, check the OAuth setup and folder permissions.
