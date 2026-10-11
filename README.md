@@ -18,7 +18,7 @@ If the site shows 404, revisit Pages settings and check the deployment status in
 2. Configure Google Auth Platform / OAuth consent. If the app is in testing mode, add the Google account you will use as a test user.
 3. In [OAuth Clients](https://console.cloud.google.com/auth/clients), create an OAuth client with application type **Web application**.
 4. Under **Authorized JavaScript origins**, add exactly `https://ronhalder93.github.io` (no path and no trailing slash).
-5. In the app, expand **Drive setup**, paste the OAuth Client ID (ends in `.apps.googleusercontent.com`), optionally enter a Drive folder ID, and tap **Save settings**.
+5. In the app, expand **Drive setup**, paste the OAuth Client ID (ends in `.apps.googleusercontent.com`), the app pre-fills your saved folder ID; replace it or clear it if you want a different destination, and tap **Save settings**.
 6. Tap **Connect Drive** and approve the permission request. Upload local files with the **↑** button or **Sync pending**.
 
 Never enter your Google password in this app. Do not put an OAuth client secret in browser code; this app only needs the public client ID.
