@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#101b1c">
+<title>Island Survival — Mini Game</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#101b1c;color:#f3f5e8;font-family:system-ui,-apple-system,Segoe UI,sans-serif;touch-action:none}canvas{display:block;width:100%;height:100%;touch-action:none}.hud{position:fixed;inset:0;pointer-events:none}.top{position:absolute;left:12px;right:12px;top:calc(10px + env(safe-area-inset-top));display:flex;gap:8px;align-items:flex-start;justify-content:space-between}.panel{background:#0b1515d9;border:1px solid #ffffff24;border-radius:13px;padding:9px 11px;box-shadow:0 5px 18px #0003}.brand{font-weight:900;letter-spacing:1px;font-size:12px}.sub{font-size:10px;color:#b7c8b5;margin-top:2px}.stats{display:flex;gap:7px;flex-wrap:wrap;justify-content:flex-end}.stat{font-size:11px;white-space:nowrap}.bar{height:5px;width:66px;background:#35413a;border-radius:8px;overflow:hidden;margin-top:4px}.fill{height:100%;width:100%;background:#6ed27c}.hint{position:absolute;top:88px;left:50%;transform:translateX(-50%);font-size:11px;color:#e7f4db;background:#0b1515b8;padding:7px 10px;border-radius:20px;white-space:nowrap}.bottom{position:absolute;left:14px;right:14px;bottom:calc(14px + env(safe-area-inset-bottom));display:flex;justify-content:space-between;align-items:end}.stick{width:116px;height:116px;border:1px solid #eaffd044;border-radius:50%;background:#0b151578;position:relative;pointer-events:auto;touch-action:none}.knob{position:absolute;left:50%;top:50%;width:46px;height:46px;margin:-23px;border-radius:50%;background:#d7ebc5b8;border:2px solid #f1ffe3;box-shadow:0 2px 10px #0005}.actions{display:grid;grid-template-columns:repeat(2,64px);gap:8px;pointer-events:auto}.act{width:64px;height:54px;border-radius:15px;border:1px solid #ffffff44;background:#12231fe8;color:#f4ffe8;font-weight:800;font-size:11px;touch-action:manipulation}.act:active{background:#416b42}.act.primary{background:#4d8a43;border-color:#a8e29c}.toast{position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;background:#0b1515e8;border:1px solid #ffffff30;border-radius:18px;padding:20px;min-width:240px;display:none;pointer-events:auto}.toast h2{margin:0 0 8px}.toast button{border:0;border-radius:10px;padding:11px 18px;background:#8fce73;color:#122010;font-weight:900}.footer{position:absolute;bottom:6px;left:50%;transform:translateX(-50%);font-size:9px;color:#d5e4d388;white-space:nowrap}@media(min-width:700px){.stick{width:135px;height:135px}.actions{grid-template-columns:repeat(2,76px)}.act{width:76px;height:62px}.bar{width:90px}}
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+<div class="hud">
+ <div class="top">
+  <div class="panel"><div class="brand">ISLAND SURVIVAL</div><div class="sub" id="day">DAY 1 · 08:00</div><div class="sub" id="objective">Gather 5 wood to survive</div></div>
+  <div class="panel stats">
+   <div class="stat">❤ <span id="hpv">100</span><div class="bar"><div id="hp" class="fill"></div></div></div>
+   <div class="stat">🍗 <span id="foodv">100</span><div class="bar"><div id="food" class="fill" style="background:#e6bd64"></div></div></div>
+   <div class="stat">🪵 <span id="woodv">0</span></div><div class="stat">🪨 <span id="stonev">0</span></div>
+  </div>
+ </div>
+ <div class="hint" id="hint">Move with joystick · collect trees · avoid wild creatures</div>
+ <div class="bottom">
+  <div class="stick" id="stick"><div class="knob" id="knob"></div></div>
+  <div class="actions"><button class="act primary" id="gather">GATHER</button><button class="act" id="attack">ATTACK</button><button class="act" id="eat">EAT BERRY</button><button class="act" id="restart">RESTART</button></div>
+ </div>
+ <div class="toast" id="toast"><h2>Island Survival</h2><p id="result">Survive as long as you can.</p><button id="again">PLAY AGAIN</button></div>
+ <div class="footer">Offline mini-game · progress resets when you reload</div>
+</div>
+<script>
+(()=>{
+const canvas=document.getElementById('game'),ctx=canvas.getContext('2d');
+const $=id=>document.getElementById(id);
+let W=0,H=0,dpr=1,world={w:2200,h:2200},cam={x:0,y:0},player,trees,rocks,critters,berries,particles,keys={x:0,y:0},last=0,elapsed=0,day=1,ended=false,toastTimer=0;
+const rand=(a,b)=>a+Math.random()*(b-a),dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+function resize(){dpr=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;canvas.width=W*dpr;canvas.height=H*dpr;ctx.setTransform(dpr,0,0,dpr,0,0)}
+addEventListener('resize',resize);resize();
+function makeWorld(){player={x:1100,y:1100,r:14,hp:100,food:100,wood:0,stone:0,speed:175,faceX:1,faceY:0,hit:0};trees=[];rocks=[];critters=[];berries=[];particles=[];for(let i=0;i<120;i++){let p=placeFar();trees.push({...p,r:rand(16,25),health:3,seed:i})}for(let i=0;i<60;i++){let p=placeFar();rocks.push({...p,r:rand(9,16),health:2})}for(let i=0;i<22;i++){let p=placeFar();critters.push({...p,r:12,hp:2,speed:rand(30,55),phase:rand(0,8),alert:false})}for(let i=0;i<45;i++){let p=placeFar();berries.push({...p,r:7})}cam.x=player.x-W/2;cam.y=player.y-H/2;elapsed=0;day=1;ended=false;keys.x=keys.y=0;$('toast').style.display='none';updateHud()}
+function placeFar(){let p;do{p={x:rand(45,world.w-45),y:rand(45,world.h-45)}}while(Math.hypot(p.x-1100,p.y-1100)<120);return p}
+function updateHud(){$('hpv').textContent=Math.ceil(player.hp);$('foodv').textContent=Math.ceil(player.food);$('woodv').textContent=player.wood;$('stonev').textContent=player.stone;$('hp').style.width=player.hp+'%';$('food').style.width=player.food+'%';$('day').textContent='DAY '+day+' · '+String(8+Math.floor((elapsed%150)/6)).padStart(2,'0')+':'+String(Math.floor((elapsed%1)*60)).padStart(2,'0');$('objective').textContent=player.wood>=5?'Build a shelter in your imagination — keep going!':'Gather '+(5-player.wood)+' more wood';}
+function circle(x,y,r,color){ctx.fillStyle=color;ctx.beginPath();ctx.arc(x,y,r,0,Math.PI*2);ctx.fill()}
+function drawTree(t){let x=t.x-cam.x,y=t.y-cam.y;if(x<-50||x>W+50||y<-70||y>H+50)return;ctx.fillStyle='#493a27';ctx.fillRect(x-4,y-1,8,21);circle(x,y-8,t.r,'#1f5838');circle(x-t.r*.45,y-15,t.r*.65,'#2d7545');circle(x+t.r*.4,y-13,t.r*.62,'#347e47');circle(x-2,y-21,t.r*.43,'#438e50');}
+function draw(){ctx.clearRect(0,0,W,H);ctx.fillStyle='#6f9b58';ctx.fillRect(0,0,W,H);
+const tile=80;for(let x=Math.floor(cam.x/tile)*tile;x<cam.x+W+tile;x+=tile){for(let y=Math.floor(cam.y/tile)*tile;y<cam.y+H+tile;y+=tile){let xx=x-cam.x,yy=y-cam.y;let n=Math.sin(x*0.02)*Math.cos(y*.017);ctx.fillStyle=n>.3?'#739f5a':n<-.3?'#709553':'#789e5a';ctx.fillRect(xx,yy,tile-1,tile-1);if(((x/tile*7+y/tile*11)%5)<1){circle(xx+24,yy+31,1,'#a6b978');circle(xx+57,yy+63,1,'#a6b978')}}}
+ctx.fillStyle='#2b99b4';ctx.beginPath();ctx.ellipse(350-cam.x,330-cam.y,210,150,-.3,0,Math.PI*2);ctx.fill();ctx.strokeStyle='#91d5d1';ctx.lineWidth=4;ctx.stroke();
+trees.forEach(drawTree);rocks.forEach(r=>{let x=r.x-cam.x,y=r.y-cam.y;ctx.fillStyle='#656d68';ctx.beginPath();ctx.ellipse(x,y,r.r,r.r*.72,-.2,0,7);ctx.fill();ctx.fillStyle='#89918a';ctx.beginPath();ctx.ellipse(x-3,y-3,r.r*.5,r.r*.3,-.3,0,7);ctx.fill()});
+berries.forEach(b=>{circle(b.x-cam.x,b.y-cam.y,7,'#d7c45e');circle(b.x-cam.x-2,b.y-cam.y-2,2,'#f4e7a0')});
+critters.forEach(c=>{let x=c.x-cam.x,y=c.y-cam.y;circle(x,y+3,c.r,'#805d48');circle(x+4,y-4,7,'#a77959');circle(x+7,y-6,2,'#f3e5c6');circle(x+8,y-6,1,'#222')});
+drawPlayer();particles.forEach(p=>{ctx.globalAlpha=clamp(p.life,0,1);circle(p.x-cam.x,p.y-cam.y,p.r,p.color);ctx.globalAlpha=1});
+const vg=ctx.createRadialGradient(W/2,H/2,Math.min(W,H)*.25,W/2,H/2,Math.max(W,H)*.7);vg.addColorStop(0,'#00000000');vg.addColorStop(1,'#11221b55');ctx.fillStyle=vg;ctx.fillRect(0,0,W,H);
+}
+function drawPlayer(){let x=player.x-cam.x,y=player.y-cam.y;ctx.fillStyle='#0003';ctx.beginPath();ctx.ellipse(x,y+12,13,6,0,0,7);ctx.fill();circle(x,y,14,'#d5b18a');circle(x,y-2,10,'#e0bd94');ctx.fillStyle='#3c5145';ctx.beginPath();ctx.arc(x,y-4,11,Math.PI,Math.PI*2);ctx.fill();ctx.fillStyle='#d8e2d1';ctx.fillRect(x-9,y+6,18,10);ctx.fillStyle='#30473b';ctx.fillRect(x-8,y+13,6,7);ctx.fillRect(x+2,y+13,6,7);circle(x+player.faceX*4,y-2,1.5,'#222');}
+function nearest(arr,max){let best=null,bd=max;for(const a of arr){let d=dist(player,a);if(d<bd){best=a;bd=d}}return best}
+function burst(x,y,color,n=8){for(let i=0;i<n;i++)particles.push({x,y,vx:rand(-55,55),vy:rand(-70,20),life:1,r:rand(2,4),color})}
+function gather(){if(ended)return;let t=nearest(trees,64);if(t){t.health--;burst(t.x,t.y,'#9a7548',5);if(t.health<=0){player.wood+=3;trees.splice(trees.indexOf(t),1);burst(t.x,t.y,'#b28b56',15);$('hint').textContent='+3 wood collected!'}else $('hint').textContent='Tree hit! '+t.health+' hits left';updateHud();return}let r=nearest(rocks,50);if(r){r.health--;burst(r.x,r.y,'#b6beb8',4);if(r.health<=0){player.stone+=2;rocks.splice(rocks.indexOf(r),1);burst(r.x,r.y,'#aab2ae',12)}$('hint').textContent='Rock gathering';updateHud()}else $('hint').textContent='Move closer to a tree or rock';}
+function attack(){if(ended)return;player.hit=.22;let c=nearest(critters,66);if(c){c.hp--;burst(c.x,c.y,'#b55f45',7);if(c.hp<=0){critters.splice(critters.indexOf(c),1);player.food=Math.min(100,player.food+10);$('hint').textContent='Creature defeated · +10 food'}else $('hint').textContent='Hit! Keep defending';}else $('hint').textContent='No creature close enough';}
+function eat(){if(ended)return;let b=nearest(berries,60);if(b){berries.splice(berries.indexOf(b),1);player.food=Math.min(100,player.food+22);burst(b.x,b.y,'#e8d26b',8);$('hint').textContent='Berry eaten · hunger restored'}else $('hint').textContent='Find a yellow berry nearby';updateHud()}
+function finish(win){ended=true;$('toast').style.display='block';$('result').textContent=win?'You survived the first day! Keep exploring.':'You were lost on the island. Try again and gather food.'}
+function tick(dt){if(ended)return;elapsed+=dt;if(elapsed>150){day++;elapsed=0;critters.forEach(c=>c.speed+=2)}
+let vx=keys.x,vy=keys.y;let len=Math.hypot(vx,vy);if(len>1){vx/=len;vy/=len}if(len>.05){player.faceX=vx;player.faceY=vy}player.x=clamp(player.x+vx*player.speed*dt,18,world.w-18);player.y=clamp(player.y+vy*player.speed*dt,18,world.h-18);player.food=Math.max(0,player.food-dt*.7);if(player.food===0)player.hp-=dt*2;
+for(const c of critters){let d=dist(player,c);if(d<220){let dx=player.x-c.x,dy=player.y-c.y,l=Math.hypot(dx,dy)||1;c.x+=dx/l*c.speed*dt;c.y+=dy/l*c.speed*dt;if(d<c.r+player.r+2)player.hp-=dt*8}else{c.phase+=dt;c.x+=Math.sin(c.phase)*c.speed*.25*dt;c.y+=Math.cos(c.phase*.8)*c.speed*.25*dt}}
+particles.forEach(p=>{p.x+=p.vx*dt;p.y+=p.vy*dt;p.life-=dt*1.8});particles=particles.filter(p=>p.life>0);cam.x=clamp(player.x-W/2,0,world.w-W);cam.y=clamp(player.y-H/2,0,world.h-H);if(W>world.w)cam.x=(world.w-W)/2;if(H>world.h)cam.y=(world.h-H)/2;
+if(player.hp<=0)finish(false);if(player.wood>=5&&day>=2)finish(true);updateHud()}
+function loop(ts){let dt=Math.min((ts-last)/1000||0,.04);last=ts;tick(dt);draw();requestAnimationFrame(loop)}requestAnimationFrame(loop);
+const stick=$('stick'),knob=$('knob');let stickId=null;
+function setStick(e){let r=stick.getBoundingClientRect(),dx=e.clientX-(r.left+r.width/2),dy=e.clientY-(r.top+r.height/2),max=r.width*.34,l=Math.hypot(dx,dy)||1;if(l>max){dx=dx/l*max;dy=dy/l*max}keys.x=dx/max;keys.y=dy/max;knob.style.transform='translate('+dx+'px,'+dy+'px)'}
+stick.addEventListener('pointerdown',e=>{stickId=e.pointerId;stick.setPointerCapture(stickId);setStick(e)});stick.addEventListener('pointermove',e=>{if(e.pointerId===stickId)setStick(e)});function resetStick(){stickId=null;keys.x=keys.y=0;knob.style.transform='translate(0,0)'}stick.addEventListener('pointerup',resetStick);stick.addEventListener('pointercancel',resetStick);
+$('gather').addEventListener('click',gather);$('attack').addEventListener('click',attack);$('eat').addEventListener('click',eat);$('restart').addEventListener('click',()=>makeWorld());$('again').addEventListener('click',()=>makeWorld());
+addEventListener('keydown',e=>{if(e.key==='ArrowUp'||e.key==='w')keys.y=-1;if(e.key==='ArrowDown'||e.key==='s')keys.y=1;if(e.key==='ArrowLeft'||e.key==='a')keys.x=-1;if(e.key==='ArrowRight'||e.key==='d')keys.x=1;if(e.key==='e')gather();if(e.key===' ')attack()});addEventListener('keyup',e=>{if(['ArrowUp','ArrowDown','w','s'].includes(e.key))keys.y=0;if(['ArrowLeft','ArrowRight','a','d'].includes(e.key))keys.x=0});
+makeWorld();
+})();
+</script>
+</body>
+</html>
