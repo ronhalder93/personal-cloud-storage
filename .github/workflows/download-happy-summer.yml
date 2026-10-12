@@ -1,0 +1,40 @@
+name: Fetch Happy Summer Android APK
+
+on:
+  push:
+    paths:
+      - ".github/workflows/download-happy-summer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  fetch-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Download APK from linked Pixeldrain file
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://pixeldrain.com/api/file/LLCx8EUq?download"
+          curl --fail --location --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 5400 "$URL" --output Happy_Summer_-1.0-android.apk
+          test -s Happy_Summer_-1.0-android.apk
+          file Happy_Summer_-1.0-android.apk
+          SIZE=$(stat -c%s Happy_Summer_-1.0-android.apk)
+          echo "Downloaded file size: $SIZE bytes"
+          if [ "$SIZE" -lt 1000000 ]; then
+            echo "Downloaded file is unexpectedly small; refusing to publish."
+            exit 1
+          fi
+      - name: Publish APK as a GitHub release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: happy-summer-android-v1.0
+          name: Happy Summer Android v1.0 (source link unverified)
+          body: |
+            APK fetched automatically from the Pixeldrain link listed by a third-party source page.
+            The file's authenticity has not been independently verified. Scan before installing.
+          files: Happy_Summer_-1.0-android.apk
+          fail_on_unmatched_files: true
