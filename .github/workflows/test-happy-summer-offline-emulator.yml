@@ -14,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - name: Download and verify original APK
+      - name: Download and verify APK
         shell: bash
         run: |
           set -euo pipefail
@@ -23,7 +23,7 @@ jobs:
           test "$(stat -c%s Happy_Summer.apk)" = "1691853194"
           echo "ab4c27b9c79602cf35d89b2585e881d630cca3b80d820ffaacbf4f32df2fb2ee  Happy_Summer.apk" | sha256sum --check
 
-      - name: Launch emulator with airplane mode enabled
+      - name: Launch emulator offline and collect evidence
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 29
@@ -37,34 +37,60 @@ jobs:
             set -eux
             mkdir -p report
             adb wait-for-device
+
+            # Record the APK signing certificate for later comparison with a developer-supplied official build.
+            APKSIGNER="$(find "${ANDROID_HOME:-/usr/local/lib/android/sdk}/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+            if [ -n "$APKSIGNER" ]; then
+              "$APKSIGNER" verify --print-certs Happy_Summer.apk > report/signing-certificate.txt 2>&1 || true
+            else
+              echo "apksigner not found on runner" > report/signing-certificate.txt
+            fi
+
             adb shell settings put global airplane_mode_on 1
             adb shell am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true || true
             adb shell svc wifi disable || true
             adb shell svc data disable || true
+            adb shell settings get global airplane_mode_on > report/airplane-mode-setting.txt
+            adb shell dumpsys connectivity > report/connectivity.txt
+            adb shell dumpsys wifi > report/wifi.txt
+
             adb install -r Happy_Summer.apk
             adb logcat -c
             adb shell monkey -p com.caizergames.hs 1
             sleep 90
+
             adb logcat -d -v threadtime > report/logcat.txt
             adb shell dumpsys activity activities > report/activities.txt
             adb shell dumpsys package com.caizergames.hs > report/package-state.txt
             adb shell pidof com.caizergames.hs > report/process.txt || true
-            echo "# Offline startup emulator test" > report/summary.txt
-            echo >> report/summary.txt
-            echo "- APK size and SHA-256 were verified before install." >> report/summary.txt
-            echo "- Emulator airplane mode was enabled; Wi-Fi and mobile data were disabled." >> report/summary.txt
-            echo "- The app was launched and observed for 90 seconds." >> report/summary.txt
-            echo >> report/summary.txt
-            echo "## Process" >> report/summary.txt
-            cat report/process.txt >> report/summary.txt || true
-            echo >> report/summary.txt
-            echo "## Activity state" >> report/summary.txt
-            grep -E 'mResumedActivity|topResumedActivity|com.caizergames.hs|PythonSDLActivity' report/activities.txt | tail -n 60 >> report/summary.txt || true
-            echo >> report/summary.txt
-            echo "## Relevant logcat lines" >> report/summary.txt
-            grep -Ein 'FATAL EXCEPTION|Fatal signal|AndroidRuntime|com.caizergames.hs|PythonSDL|renpy|license|download|network|offline|UnsatisfiedLinkError|dlopen failed|OpenGL|EGL|SDL|Traceback|ImportError|No space left' report/logcat.txt | tail -n 300 >> report/summary.txt || true
+            adb exec-out screencap -p > report/screenshot.png || true
+
+            {
+              echo "# Offline startup emulator test"
+              echo
+              echo "- APK size and SHA-256 were verified before installation."
+              echo "- APK signing certificate details are recorded separately; authenticity is not established without an official reference build."
+              echo "- Airplane mode was requested, and Wi-Fi/mobile data disable commands were issued."
+              echo "- Connectivity and Wi-Fi diagnostic snapshots are attached."
+              echo "- The app was observed for 90 seconds; a screenshot was captured where supported."
+              echo "- This is an offline startup smoke test, not proof of complete gameplay."
+              echo
+              echo "## Process"
+              cat report/process.txt || true
+              echo
+              echo "## Activity state"
+              grep -E 'mResumedActivity|topResumedActivity|com.caizergames.hs|PythonSDLActivity' report/activities.txt | tail -n 60 || true
+              echo
+              echo "## Relevant logcat lines"
+              grep -Ein 'FATAL EXCEPTION|Fatal signal|AndroidRuntime|com.caizergames.hs|PythonSDL|renpy|license|download|network|offline|UnsatisfiedLinkError|dlopen failed|OpenGL|EGL|SDL|Traceback|ImportError|No space left' report/logcat.txt | tail -n 300 || true
+            } >> report/summary.txt
             cat report/summary.txt
-      - name: Upload offline startup logs
+
+            # Keep the failure visible to Actions while the always() upload step preserves evidence.
+            test -s report/process.txt
+            grep -Eq 'mResumedActivity|topResumedActivity' report/activities.txt
+
+      - name: Upload offline startup evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
