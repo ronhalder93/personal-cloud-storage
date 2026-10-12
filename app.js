@@ -25,20 +25,26 @@ async function uploadStatus(url){
 try{
  if(!session)session=await startSession();
  let next=0;
- const status=await uploadStatus(session);
+ let status=await uploadStatus(session);
+ if(status===null){session=await startSession();status={next:0}}
  if(status&&status.id){x.driveId=status.id;await put(x);localStorage.removeItem(sessionKey);await render();await refreshDrive();say('Uploaded to Google Drive.');return}
  if(status&&Number.isFinite(status.next))next=status.next;
+ let networkRetries=0;
  while(next<x.blob.size){
   const end=Math.min(next+CHUNK,x.blob.size);
   const part=x.blob.slice(next,end);
   let r;
   try{r=await fetch(session,{method:'PUT',headers:{'Content-Range':'bytes '+next+'-'+(end-1)+'/'+x.blob.size,'Content-Type':x.type||'application/octet-stream'},body:part})}
   catch(err){
+   networkRetries++;
+   if(networkRetries>3)throw new Error('Network interrupted. Tap upload again to resume.');
    const st=await uploadStatus(session);
    if(st&&st.id){r=null; x.driveId=st.id;break}
+   if(st===null){session=await startSession();next=0;continue}
    if(st&&Number.isFinite(st.next)){next=st.next;continue}
    throw new Error('Network interrupted. Tap upload again to resume.');
   }
+  networkRetries=0;
   if(r.status===308){
    const range=r.headers.get('Range')||'';const m=range.match(/bytes=0-(\\d+)/);
    next=m?Number(m[1])+1:end;
