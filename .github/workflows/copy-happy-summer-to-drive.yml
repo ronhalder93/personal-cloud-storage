@@ -130,7 +130,7 @@ jobs:
               file_id = existing[0]["id"]
               print("Updating existing Drive file:", file_id)
               request = drive.files().update(
-                  fileId=file_id, body=metadata, media_body=media
+                  fileId=file_id, body={"name": name}, media_body=media
               )
           else:
               request = drive.files().create(
