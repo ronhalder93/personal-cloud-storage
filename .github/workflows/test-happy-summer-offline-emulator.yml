@@ -1,9 +1,6 @@
 name: Test Happy Summer Offline Startup (Emulator)
 
 on:
-  push:
-    paths:
-      - ".github/workflows/test-happy-summer-offline-emulator.yml"
   workflow_dispatch:
 
 permissions:
@@ -11,7 +8,6 @@ permissions:
 
 jobs:
   offline-startup:
-    if: github.event_name == 'workflow_dispatch' || contains(github.event.head_commit.message, '[run-offline-test]')
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
