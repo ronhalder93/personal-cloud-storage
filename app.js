@@ -17,7 +17,7 @@ async function startSession(){
 async function uploadStatus(url){
  const r=await fetch(url,{method:'PUT',headers:{'Content-Range':'bytes */'+x.blob.size},body:new Blob([])});
  if(r.status===200||r.status===201)return await r.json();
- if(r.status===308){const range=r.headers.get('Range')||'';const m=range.match(/bytes=0-(\\d+)/);return {next:m?Number(m[1])+1:0};}
+ if(r.status===308){const range=r.headers.get('Range')||'';const m=range.match(/bytes=0-(\d+)/);return {next:m?Number(m[1])+1:0};}
  if(r.status===404||r.status===410){localStorage.removeItem(sessionKey);return null;}
  if(!r.ok)throw new Error('Upload status check failed: '+await apiError(r));
  return {next:0};
@@ -46,7 +46,7 @@ try{
   }
   networkRetries=0;
   if(r.status===308){
-   const range=r.headers.get('Range')||'';const m=range.match(/bytes=0-(\\d+)/);
+   const range=r.headers.get('Range')||'';const m=range.match(/bytes=0-(\d+)/);
    next=m?Number(m[1])+1:end;
    const pct=Math.floor(next/x.blob.size*100);
    if(btn)btn.textContent=pct+'%';
