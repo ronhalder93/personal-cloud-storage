@@ -11,6 +11,48 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
+      - name: Validate secrets and Google Drive access before large download
+        env:
+          DRIVE_OAUTH_CLIENT_ID: ${{ secrets.DRIVE_OAUTH_CLIENT_ID }}
+          DRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.DRIVE_OAUTH_CLIENT_SECRET }}
+          DRIVE_OAUTH_REFRESH_TOKEN: ${{ secrets.DRIVE_OAUTH_REFRESH_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          for name in DRIVE_OAUTH_CLIENT_ID DRIVE_OAUTH_CLIENT_SECRET DRIVE_OAUTH_REFRESH_TOKEN; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing repository secret: $name"
+              exit 1
+            fi
+          done
+          python -m pip install --disable-pip-version-check google-api-python-client google-auth google-auth-httplib2
+          python - <<'PY'
+          import os
+          from google.auth.transport.requests import Request
+          from google.oauth2.credentials import Credentials
+          from googleapiclient.discovery import build
+
+          creds = Credentials(
+              token=None,
+              refresh_token=os.environ["DRIVE_OAUTH_REFRESH_TOKEN"],
+              token_uri="https://oauth2.googleapis.com/token",
+              client_id=os.environ["DRIVE_OAUTH_CLIENT_ID"],
+              client_secret=os.environ["DRIVE_OAUTH_CLIENT_SECRET"],
+              scopes=["https://www.googleapis.com/auth/drive"],
+          )
+          try:
+              creds.refresh(Request())
+              drive = build("drive", "v3", credentials=creds, cache_discovery=False)
+              about = drive.about().get(fields="user(displayName,emailAddress),storageQuota(limit,usage,usageInDrive)").execute()
+              user = about.get("user", {})
+              print("Google Drive OAuth OK for:", user.get("emailAddress", "authorized account"))
+              quota = about.get("storageQuota", {})
+              if quota.get("limit") and quota.get("usage"):
+                  print("Drive storage quota and usage retrieved successfully.")
+          except Exception as exc:
+              print("::error::Google Drive OAuth preflight failed. Check the OAuth client ID, client secret, refresh token, Drive API, and OAuth test-user settings.")
+              raise
+          PY
       - name: Download the already-hosted APK
         shell: bash
         run: |
@@ -27,13 +69,6 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for name in DRIVE_OAUTH_CLIENT_ID DRIVE_OAUTH_CLIENT_SECRET DRIVE_OAUTH_REFRESH_TOKEN; do
-            if [ -z "${!name:-}" ]; then
-              echo "::error::Missing repository secret: $name"
-              exit 1
-            fi
-          done
-          python -m pip install --disable-pip-version-check google-api-python-client google-auth google-auth-httplib2
           python - <<'PY'
           import os
           from google.oauth2.credentials import Credentials
