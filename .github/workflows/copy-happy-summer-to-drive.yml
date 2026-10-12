@@ -11,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - name: Validate secrets and Google Drive access before large download
+      - name: Validate OAuth and available Drive storage before downloading
         env:
           DRIVE_OAUTH_CLIENT_ID: ${{ secrets.DRIVE_OAUTH_CLIENT_ID }}
           DRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.DRIVE_OAUTH_CLIENT_SECRET }}
@@ -32,6 +32,7 @@ jobs:
           from google.oauth2.credentials import Credentials
           from googleapiclient.discovery import build
 
+          APK_SIZE = 1691853194
           creds = Credentials(
               token=None,
               refresh_token=os.environ["DRIVE_OAUTH_REFRESH_TOKEN"],
@@ -43,24 +44,48 @@ jobs:
           try:
               creds.refresh(Request())
               drive = build("drive", "v3", credentials=creds, cache_discovery=False)
-              about = drive.about().get(fields="user(displayName,emailAddress),storageQuota(limit,usage,usageInDrive)").execute()
+              about = drive.about().get(
+                  fields="user(displayName,emailAddress),storageQuota(limit,usage,usageInDrive)"
+              ).execute()
               user = about.get("user", {})
               print("Google Drive OAuth OK for:", user.get("emailAddress", "authorized account"))
               quota = about.get("storageQuota", {})
-              if quota.get("limit") and quota.get("usage"):
-                  print("Drive storage quota and usage retrieved successfully.")
-          except Exception as exc:
-              print("::error::Google Drive OAuth preflight failed. Check the OAuth client ID, client secret, refresh token, Drive API, and OAuth test-user settings.")
+              limit = int(quota["limit"]) if quota.get("limit") else None
+              usage = int(quota["usage"]) if quota.get("usage") else 0
+              if limit is not None:
+                  free = limit - usage
+                  print(f"Google Drive available quota: {free} bytes; APK needs {APK_SIZE} bytes.")
+                  if free < APK_SIZE:
+                      raise RuntimeError(
+                          f"Not enough Google Drive storage: {free} bytes free, "
+                          f"but APK needs {APK_SIZE} bytes. Free space or upgrade Drive storage first."
+                      )
+              else:
+                  print("Google Drive did not report a quota limit; skipping quota-size check.")
+          except Exception:
+              print("::error::Google Drive preflight failed. Check OAuth credentials, Drive API, test-user settings, and available Drive storage.")
               raise
           PY
-      - name: Download the already-hosted APK
+      - name: Download and verify the release APK on the GitHub runner
         shell: bash
         run: |
           set -euo pipefail
           URL="https://github.com/ronhalder93/personal-cloud-storage/releases/download/happy-summer-android-v1.0/Happy_Summer_-1.0-android.apk"
-          curl --fail --location --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 5400 "$URL" --output Happy_Summer_-1.0-android.apk
-          test "$(stat -c%s Happy_Summer_-1.0-android.apk)" -gt 1000000
-      - name: Upload to personal Google Drive using OAuth
+          EXPECTED_SIZE="1691853194"
+          EXPECTED_SHA256="ab4c27b9c79602cf35d89b2585e881d630cca3b80d820ffaacbf4f32df2fb2ee"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 5400 "$URL" --output Happy_Summer_-1.0-android.apk
+          ACTUAL_SIZE="$(stat -c%s Happy_Summer_-1.0-android.apk)"
+          if [ "$ACTUAL_SIZE" != "$EXPECTED_SIZE" ]; then
+            echo "::error::APK size mismatch: expected $EXPECTED_SIZE bytes, got $ACTUAL_SIZE bytes."
+            exit 1
+          fi
+          ACTUAL_SHA256="$(sha256sum Happy_Summer_-1.0-android.apk | cut -d' ' -f1)"
+          if [ "$ACTUAL_SHA256" != "$EXPECTED_SHA256" ]; then
+            echo "::error::APK SHA-256 mismatch; refusing to upload an unexpected file."
+            exit 1
+          fi
+          echo "APK size and SHA-256 verified."
+      - name: Upload to personal Google Drive using resumable upload
         env:
           DRIVE_OAUTH_CLIENT_ID: ${{ secrets.DRIVE_OAUTH_CLIENT_ID }}
           DRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.DRIVE_OAUTH_CLIENT_SECRET }}
@@ -86,11 +111,13 @@ jobs:
           drive = build("drive", "v3", credentials=creds, cache_discovery=False)
           name = "Happy_Summer_-1.0-android.apk"
           folder = os.environ.get("DRIVE_FOLDER_ID", "").strip()
-          q = "name = '" + name.replace("'", "\\'") + "' and trashed = false"
+          escaped_name = name.replace("\\", "\\\\").replace("'", "\\'")
+          q = "name = '" + escaped_name + "' and trashed = false"
           if folder:
-              q += " and '" + folder.replace("'", "\\'") + "' in parents"
+              escaped_folder = folder.replace("\\", "\\\\").replace("'", "\\'")
+              q += " and '" + escaped_folder + "' in parents"
           existing = drive.files().list(
-              q=q, spaces="drive", fields="files(id,name,size)", pageSize=10
+              q=q, spaces="drive", fields="files(id,name,size)", pageSize=100
           ).execute().get("files", [])
           media = MediaFileUpload(
               name, mimetype="application/vnd.android.package-archive",
@@ -100,8 +127,10 @@ jobs:
           if folder:
               metadata["parents"] = [folder]
           if existing:
+              file_id = existing[0]["id"]
+              print("Updating existing Drive file:", file_id)
               request = drive.files().update(
-                  fileId=existing[0]["id"], body=metadata, media_body=media
+                  fileId=file_id, body=metadata, media_body=media
               )
           else:
               request = drive.files().create(
@@ -109,8 +138,17 @@ jobs:
               )
           response = None
           while response is None:
-              status, response = request.next_chunk()
+              status, response = request.next_chunk(num_retries=5)
               if status:
                   print(f"Uploaded {int(status.progress() * 100)}%")
-          print("Google Drive upload complete:", response.get("name"), response.get("id"), response.get("size"))
+          if int(response.get("size", 0)) != 1691853194:
+              raise RuntimeError(
+                  f"Drive reported unexpected uploaded size: {response.get('size')}"
+              )
+          print(
+              "Google Drive upload complete:",
+              response.get("name"),
+              response.get("id"),
+              response.get("size"),
+          )
           PY
