@@ -1,0 +1,71 @@
+name: Build Island Survival Android APK
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'game.html'
+      - 'android/**'
+      - '.github/workflows/build-android-apk.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: island-survival-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Package game into Android app
+        run: |
+          mkdir -p android/app/src/main/assets
+          cp game.html android/app/src/main/assets/game.html
+
+      - name: Build installable debug APK
+        run: gradle --no-daemon -p android assembleDebug
+
+      - name: Prepare APK
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk IslandSurvival.apk
+
+      - name: Save APK as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: IslandSurvival-APK
+          path: IslandSurvival.apk
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Publish APK download to cloud page
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: island-survival-apk
+          name: Island Survival Android APK
+          body: |
+            Installable Android build of Island Survival.
+            Download IslandSurvival.apk and open it on your Android phone.
+            This is a debug-signed build for direct testing, not a Play Store release.
+          files: IslandSurvival.apk
+          overwrite_files: true
+          prerelease: true
+          make_latest: false
