@@ -1,0 +1,67 @@
+name: Copy Happy Summer APK to Google Drive
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  copy-to-drive:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Download the already-hosted APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/ronhalder93/personal-cloud-storage/releases/download/happy-summer-android-v1.0/Happy_Summer_-1.0-android.apk"
+          curl --fail --location --retry 3 --retry-delay 5 --connect-timeout 30 --max-time 5400 "$URL" --output Happy_Summer_-1.0-android.apk
+          test "$(stat -c%s Happy_Summer_-1.0-android.apk)" -gt 1000000
+      - name: Upload to Google Drive using a service account
+        env:
+          DRIVE_SERVICE_ACCOUNT_JSON: ${{ secrets.DRIVE_SERVICE_ACCOUNT_JSON }}
+          DRIVE_FOLDER_ID: ${{ secrets.DRIVE_FOLDER_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${DRIVE_SERVICE_ACCOUNT_JSON:-}" ]; then
+            echo "::error::Add the DRIVE_SERVICE_ACCOUNT_JSON repository secret first. See the workflow setup notes in the repository README."
+            exit 1
+          fi
+          python -m pip install --disable-pip-version-check google-api-python-client google-auth
+          python - <<'PY'
+          import json, os
+          from google.oauth2 import service_account
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          info = json.loads(os.environ["DRIVE_SERVICE_ACCOUNT_JSON"])
+          creds = service_account.Credentials.from_service_account_info(
+              info, scopes=["https://www.googleapis.com/auth/drive"]
+          )
+          drive = build("drive", "v3", credentials=creds, cache_discovery=False)
+          name = "Happy_Summer_-1.0-android.apk"
+          folder = os.environ.get("DRIVE_FOLDER_ID", "").strip()
+          q = "name = '" + name.replace("'", "\\'") + "' and trashed = false"
+          if folder:
+              q += " and '" + folder.replace("'", "\\'") + "' in parents"
+          existing = drive.files().list(
+              q=q, spaces="drive", fields="files(id,name,size)", pageSize=10
+          ).execute().get("files", [])
+          media = MediaFileUpload(name, mimetype="application/vnd.android.package-archive",
+                                  resumable=True, chunksize=8 * 1024 * 1024)
+          metadata = {"name": name}
+          if folder:
+              metadata["parents"] = [folder]
+          if existing:
+              request = drive.files().update(fileId=existing[0]["id"], body=metadata, media_body=media)
+          else:
+              request = drive.files().create(body=metadata, media_body=media, fields="id,name,size")
+          response = None
+          while response is None:
+              status, response = request.next_chunk()
+              if status:
+                  print(f"Uploaded {int(status.progress() * 100)}%")
+          print("Google Drive upload complete:", response.get("name"), response.get("id"), response.get("size"))
+          PY
