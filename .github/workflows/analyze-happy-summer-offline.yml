@@ -49,8 +49,53 @@ jobs:
             echo "## Requested permissions"
             aapt dump permissions Happy_Summer.apk
             echo
-            echo "## APK contents: likely game engines, native libraries, expansion files"
-            unzip -l Happy_Summer.apk | grep -Ei '(^|/)(lib/|assets/|obb/)|\.so$|\.obb$|\.pak$|\.bundle$|\.manifest$' | head -n 500 || true
+            echo "## ZIP/APK integrity and complete file inventory"
+            unzip -t Happy_Summer.apk | tail -n 3 || true
+            echo "Entry count:"
+            unzip -Z -1 Happy_Summer.apk | wc -l
+            echo "Top-level entries:"
+            unzip -Z -1 Happy_Summer.apk | awk -F/ 'NF==1 {print}' | head -n 200
+            echo "Largest archive entries (uncompressed size):"
+            zipinfo -l Happy_Summer.apk | sort -k4,4nr | head -n 80 || true
+            echo
+            echo "## APK contents: assets, game data, native libraries, expansion files"
+            unzip -l Happy_Summer.apk | grep -Ei '(^|/)(lib/|assets/|obb/|renpy/|game/)|\.so$|\.obb$|\.rpa$|\.rpyc$|\.pak$|\.bundle$|\.manifest$|\.zip$|\.mp3$|\.mp4$|\.webm$|\.dat
+          } > report/summary.txt 2>&1
+
+          # Decode manifest/resources without decompiling Java/Kotlin sources.
+          apktool d -f -s Happy_Summer.apk -o decoded > report/apktool.log 2>&1 || {
+            echo "apktool could not fully decode this APK; see apktool.log." >> report/summary.txt
+          }
+
+          if [ -f decoded/AndroidManifest.xml ]; then
+            cp decoded/AndroidManifest.xml report/AndroidManifest.xml
+            {
+              echo
+              echo "## Manifest flags and network configuration references"
+              grep -Ein 'usesCleartextTraffic|networkSecurityConfig|INTERNET|ACCESS_NETWORK_STATE|uses-sdk|extractNativeLibs|isGame|android:debuggable|android:allowBackup' decoded/AndroidManifest.xml || true
+              echo
+              echo "## URLs/domains embedded in decoded resources and smali"
+              grep -RhoE 'https?://[^"[:space:]<>]+' decoded/res decoded/smali* 2>/dev/null | sed 's/[),;].*$//' | sort -u | head -n 500 || true
+              echo
+              echo "## Offline/cache/download/network-related code references"
+              grep -RinE 'offline|no.?network|internet|connectivity|download|streaming|asset.?bundle|remote.?config|login|server|api\.|obb|expansion|APKExpansion|DownloaderService|DownloaderClient|LVL|licens|main\.[0-9]+\.|patch\.' decoded/res decoded/smali* 2>/dev/null | head -n 2500 || true
+            } >> report/summary.txt
+          fi
+
+          cp report/apktool.log report/ 2>/dev/null || true
+          cat report/summary.txt
+
+      - name: Upload diagnostic report
+        uses: actions/upload-artifact@v4
+        with:
+          name: happy-summer-offline-diagnostic
+          path: report/
+          if-no-files-found: error
+          retention-days: 14
+ | head -n 1500 || true
+            echo
+            echo "## Android expansion downloader classes and asset pack references"
+            unzip -Z -1 Happy_Summer.apk | grep -Ei 'downloader|expansion|obb|googleplay|asset.?pack|main\.[0-9]+\.' | head -n 500 || true
           } > report/summary.txt 2>&1
 
           # Decode manifest/resources without decompiling Java/Kotlin sources.
