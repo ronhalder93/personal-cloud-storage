@@ -2,6 +2,9 @@ name: Test Happy Summer Offline Startup (Emulator)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/test-happy-summer-offline-emulator.yml'
 
 permissions:
   contents: read
