@@ -1,0 +1,73 @@
+name: Test Happy Summer Offline Startup (Emulator)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-startup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Download and verify original APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/ronhalder93/personal-cloud-storage/releases/download/happy-summer-android-v1.0/Happy_Summer_-1.0-android.apk"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 5400 "$URL" --output Happy_Summer.apk
+          test "$(stat -c%s Happy_Summer.apk)" = "1691853194"
+          echo "ab4c27b9c79602cf35d89b2585e881d630cca3b80d820ffaacbf4f32df2fb2ee  Happy_Summer.apk" | sha256sum --check
+
+      - name: Launch emulator with airplane mode enabled
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 29
+          arch: x86_64
+          target: default
+          profile: pixel_2
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          emulator-boot-timeout: 900
+          disable-animations: true
+          script: |
+            set -euxo pipefail
+            mkdir -p report
+            adb wait-for-device
+            adb shell settings put global airplane_mode_on 1
+            adb shell am broadcast -a android.intent.action.AIRPLANE_MODE --ez state true || true
+            adb shell svc wifi disable || true
+            adb shell svc data disable || true
+            adb install -r Happy_Summer.apk
+            adb logcat -c
+            adb shell monkey -p com.caizergames.hs 1
+            sleep 90
+            adb logcat -d -v threadtime > report/logcat.txt
+            adb shell dumpsys activity activities > report/activities.txt
+            adb shell dumpsys package com.caizergames.hs > report/package-state.txt
+            adb shell pidof com.caizergames.hs > report/process.txt || true
+            {
+              echo "# Offline startup emulator test"
+              echo
+              echo "- APK size and SHA-256 were verified before install."
+              echo "- Emulator airplane mode was enabled; Wi-Fi and mobile data were disabled."
+              echo "- The app was launched and observed for 90 seconds."
+              echo
+              echo "## Process"
+              cat report/process.txt || true
+              echo
+              echo "## Activity state"
+              grep -E 'mResumedActivity|topResumedActivity|com.caizergames.hs|PythonSDLActivity' report/activities.txt | tail -n 60 || true
+              echo
+              echo "## Relevant logcat lines"
+              grep -Ein 'FATAL EXCEPTION|Fatal signal|AndroidRuntime|com.caizergames.hs|PythonSDL|renpy|license|download|network|offline|UnsatisfiedLinkError|dlopen failed|OpenGL|EGL|SDL|Traceback|ImportError|No space left' report/logcat.txt | tail -n 300 || true
+            } > report/summary.txt
+            cat report/summary.txt
+      - name: Upload offline startup logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: happy-summer-offline-emulator-result
+          path: report/
+          if-no-files-found: warn
+          retention-days: 14
