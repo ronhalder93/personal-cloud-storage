@@ -1,0 +1,85 @@
+name: Diagnose Happy Summer Offline Startup
+
+on:
+  push:
+    paths:
+      - ".github/workflows/analyze-happy-summer-offline.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  inspect-apk:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Download the pinned APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/ronhalder93/personal-cloud-storage/releases/download/happy-summer-android-v1.0/Happy_Summer_-1.0-android.apk"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 5400 "$URL" --output Happy_Summer.apk
+          test "$(stat -c%s Happy_Summer.apk)" = "1691853194"
+          echo "APK size verified."
+          echo "ab4c27b9c79602cf35d89b2585e881d630cca3b80d820ffaacbf4f32df2fb2ee  Happy_Summer.apk" | sha256sum --check
+
+      - name: Install Android APK inspection tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y aapt apktool unzip
+
+      - name: Inspect package, permissions, manifest, and offline-related references
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p report decoded
+          {
+            echo "# Happy Summer APK static inspection"
+            echo
+            echo "- APK SHA-256: ab4c27b9c79602cf35d89b2585e881d630cca3b80d820ffaacbf4f32df2fb2ee"
+            echo "- APK size: 1,691,853,194 bytes"
+            echo "- Note: static inspection cannot prove the game runs offline; device testing is still required."
+            echo
+            echo "## Package metadata"
+            aapt dump badging Happy_Summer.apk
+            echo
+            echo "## Requested permissions"
+            aapt dump permissions Happy_Summer.apk
+            echo
+            echo "## APK contents: likely game engines, native libraries, expansion files"
+            unzip -l Happy_Summer.apk | grep -Ei '(^|/)(lib/|assets/|obb/)|\.so$|\.obb$|\.pak$|\.bundle$|\.manifest$' | head -n 500 || true
+          } > report/summary.txt 2>&1
+
+          # Decode manifest/resources without decompiling Java/Kotlin sources.
+          apktool d -f -s Happy_Summer.apk -o decoded > report/apktool.log 2>&1 || {
+            echo "apktool could not fully decode this APK; see apktool.log." >> report/summary.txt
+          }
+
+          if [ -f decoded/AndroidManifest.xml ]; then
+            cp decoded/AndroidManifest.xml report/AndroidManifest.xml
+            {
+              echo
+              echo "## Manifest flags and network configuration references"
+              grep -Ein 'usesCleartextTraffic|networkSecurityConfig|INTERNET|ACCESS_NETWORK_STATE|uses-sdk|extractNativeLibs|isGame|android:debuggable|android:allowBackup' decoded/AndroidManifest.xml || true
+              echo
+              echo "## URLs/domains embedded in decoded resources and smali"
+              grep -RhoE 'https?://[^"[:space:]<>]+' decoded/res decoded/smali* 2>/dev/null | sed 's/[),;].*$//' | sort -u | head -n 500 || true
+              echo
+              echo "## Offline/cache/download/network-related code references"
+              grep -RinE 'offline|no.?network|internet|connectivity|download|streaming|asset.?bundle|remote.?config|login|server|api\.' decoded/res decoded/smali* 2>/dev/null | head -n 1000 || true
+            } >> report/summary.txt
+          fi
+
+          cp report/apktool.log report/ 2>/dev/null || true
+          cat report/summary.txt
+
+      - name: Upload diagnostic report
+        uses: actions/upload-artifact@v4
+        with:
+          name: happy-summer-offline-diagnostic
+          path: report/
+          if-no-files-found: error
+          retention-days: 14
