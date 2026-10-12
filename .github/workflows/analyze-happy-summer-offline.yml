@@ -1,9 +1,6 @@
 name: Diagnose Happy Summer Offline Startup
 
 on:
-  push:
-    paths:
-      - ".github/workflows/analyze-happy-summer-offline.yml"
   workflow_dispatch:
 
 permissions:
