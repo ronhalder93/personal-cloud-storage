@@ -40,8 +40,6 @@ jobs:
               echo "UNDER_500_MB=no"
             fi
           } | tee compression-report.txt
-          if [ "$COMPRESSED" -lt 500000000 ]; then echo "under500=true" >> "$GITHUB_OUTPUT"; else echo "under500=false" >> "$GITHUB_OUTPUT"; fi
-        id: compress
       - name: Upload compression report
         if: always()
         uses: actions/upload-artifact@v4
@@ -50,11 +48,10 @@ jobs:
           path: compression-report.txt
           if-no-files-found: warn
           retention-days: 7
-      - name: Upload compressed archive if under 500 MB
-        if: steps.compress.outputs.under500 == 'true'
+      - name: Upload compressed game archive for phone download
         uses: actions/upload-artifact@v4
         with:
-          name: happy-summer-under-500mb-archive
+          name: happy-summer-game-archive
           path: Happy_Summer_test.7z
           if-no-files-found: error
           retention-days: 7
