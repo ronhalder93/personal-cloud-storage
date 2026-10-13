@@ -1,4 +1,4 @@
-name: Test Happy Summer Compression
+name: Package Happy Summer APK for Phone Download
 on:
   push:
     paths:
@@ -7,14 +7,10 @@ on:
 permissions:
   contents: read
 jobs:
-  compress-test:
+  package-apk:
     runs-on: ubuntu-latest
     timeout-minutes: 90
     steps:
-      - name: Install 7-Zip
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
       - name: Download verified APK
         shell: bash
         run: |
@@ -23,35 +19,10 @@ jobs:
           curl --fail --location --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 5400 "$URL" --output Happy_Summer.apk
           test "$(stat -c%s Happy_Summer.apk)" = "1691853194"
           echo "ab4c27b9c79602cf35d89b2585e881d630cca3b80d820ffaacbf4f32df2fb2ee  Happy_Summer.apk" | sha256sum --check
-      - name: Try maximum solid LZMA2 compression
-        shell: bash
-        run: |
-          set -euo pipefail
-          7z a -t7z -m0=lzma2 -mx=9 -ms=on Happy_Summer_test.7z Happy_Summer.apk
-          ORIGINAL=$(stat -c%s Happy_Summer.apk)
-          COMPRESSED=$(stat -c%s Happy_Summer_test.7z)
-          {
-            echo "Original APK bytes: $ORIGINAL"
-            echo "Compressed archive bytes: $COMPRESSED"
-            awk -v o="$ORIGINAL" -v c="$COMPRESSED" 'BEGIN {printf "Reduction: %.2f%%\n", (1-c/o)*100}'
-            if [ "$COMPRESSED" -lt 500000000 ]; then
-              echo "UNDER_500_MB=yes"
-            else
-              echo "UNDER_500_MB=no"
-            fi
-          } | tee compression-report.txt
-      - name: Upload compression report
-        if: always()
+      - name: Upload APK directly as a downloadable artifact
         uses: actions/upload-artifact@v4
         with:
-          name: happy-summer-compression-report
-          path: compression-report.txt
-          if-no-files-found: warn
-          retention-days: 7
-      - name: Upload compressed game archive for phone download
-        uses: actions/upload-artifact@v4
-        with:
-          name: happy-summer-game-archive
-          path: Happy_Summer_test.7z
+          name: happy-summer-apk-for-phone
+          path: Happy_Summer.apk
           if-no-files-found: error
           retention-days: 7
