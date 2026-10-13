@@ -1,0 +1,75 @@
+name: Happy Summer Extreme Compression Lab
+on:
+  push:
+    paths:
+      - ".github/workflows/happy-summer-extreme-compression.yml"
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  compress:
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    steps:
+      - name: Install compression tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y p7zip-full zstd xz-utils
+      - name: Download and verify original APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          URL="https://github.com/ronhalder93/personal-cloud-storage/releases/download/happy-summer-android-v1.0/Happy_Summer_-1.0-android.apk"
+          curl --fail --location --retry 5 --retry-all-errors --retry-delay 5 --connect-timeout 30 --max-time 9000 "$URL" --output Happy_Summer.apk
+          test "$(stat -c%s Happy_Summer.apk)" = "1691853194"
+          echo "ab4c27b9c79602cf35d89b2585e881d630cca3b80d820ffaacbf4f32df2fb2ee  Happy_Summer.apk" | sha256sum --check
+      - name: Try strong compressors and repeated compression rounds
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p results
+          ORIGINAL=$(stat -c%s Happy_Summer.apk)
+          printf "Original APK: %s bytes\n" "$ORIGINAL" > results/report.txt
+          xz -9e -T2 -c Happy_Summer.apk > results/apk.xz
+          zstd -19 -T2 -c Happy_Summer.apk > results/apk.zst
+          7z a -t7z -mx=9 -m0=lzma2:d=256m results/apk.7z Happy_Summer.apk >/tmp/7z.log
+          gzip -9 -c Happy_Summer.apk > results/apk.gz
+          best_file=$(find results -maxdepth 1 -type f \( -name 'apk.xz' -o -name 'apk.zst' -o -name 'apk.7z' -o -name 'apk.gz' \) -printf '%s %p\n' | sort -n | head -1 | cut -d' ' -f2-)
+          best_size=$(stat -c%s "$best_file")
+          printf "First-round best: %s (%s bytes, %.2f%% of original)\n" "$best_file" "$best_size" "$(awk -v s="$best_size" -v o="$ORIGINAL" 'BEGIN {print 100*s/o}') " >> results/report.txt
+          cp "$best_file" results/best-compressed-file
+          # Try compressing the best result again with several algorithms. Keep only strict size improvements.
+          for round in 1 2 3; do
+            input=results/best-compressed-file
+            input_size=$(stat -c%s "$input")
+            xz -9e -T2 -c "$input" > "results/nested-$round.xz"
+            zstd -19 -T2 -c "$input" > "results/nested-$round.zst"
+            gzip -9 -c "$input" > "results/nested-$round.gz"
+            7z a -t7z -mx=9 -m0=lzma2:d=256m "results/nested-$round.7z" "$input" >/tmp/nested-7z.log
+            candidate=$(find results -maxdepth 1 -type f -name "nested-$round.*" -printf '%s %p\n' | sort -n | head -1 | cut -d' ' -f2-)
+            candidate_size=$(stat -c%s "$candidate")
+            if [ "$candidate_size" -lt "$input_size" ]; then
+              cp "$candidate" results/best-compressed-file
+              printf "Round %s: improved to %s bytes with %s\n" "$round" "$candidate_size" "$candidate" >> results/report.txt
+            else
+              printf "Round %s: no improvement; smallest nested result %s bytes (input %s bytes)\n" "$round" "$candidate_size" "$input_size" >> results/report.txt
+              break
+            fi
+          done
+          FINAL=$(stat -c%s results/best-compressed-file)
+          printf "Final best size: %s bytes (%.2f MB; %.2f%% of original)\n" "$FINAL" "$(awk -v s="$FINAL" 'BEGIN {print s/1000000}')" "$(awk -v s="$FINAL" -v o="$ORIGINAL" 'BEGIN {print 100*s/o}')" >> results/report.txt
+          if [ "$FINAL" -le 500000000 ]; then
+            echo "TARGET: reached 500 MB or below." >> results/report.txt
+          else
+            echo "TARGET: 500 MB not reached by lossless archive compression; do not rename this as an APK. Extract it before installing." >> results/report.txt
+          fi
+          cat results/report.txt
+      - name: Upload compression results and best lossless archive
+        uses: actions/upload-artifact@v4
+        with:
+          name: happy-summer-extreme-compression-results
+          path: |
+            results/report.txt
+            results/best-compressed-file
+          if-no-files-found: error
+          retention-days: 7
