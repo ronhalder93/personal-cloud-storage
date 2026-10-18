@@ -27,14 +27,21 @@ public class RgbInputMethodService extends InputMethodService {
         List<RectF> rects = new ArrayList<>(); List<String> labels = new ArrayList<>();
         Runnable anim = new Runnable(){ public void run(){ invalidate(); handler.postDelayed(this, 40); }};
         KeyboardView(){ super(RgbInputMethodService.this); setLayerType(View.LAYER_TYPE_SOFTWARE,null); handler.post(anim); }
+        int dp(float v){ return (int)(v*getResources().getDisplayMetrics().density+0.5f); }
+        @Override protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
+            int width = MeasureSpec.getSize(widthMeasureSpec);
+            int available = MeasureSpec.getSize(heightMeasureSpec);
+            int wanted = dp(260);
+            if (available > 0) wanted = Math.min(wanted, available);
+            setMeasuredDimension(width, wanted);
+        }
         @Override protected void onDetachedFromWindow(){ handler.removeCallbacks(anim); super.onDetachedFromWindow(); }
         @Override protected void onDraw(Canvas c){
             super.onDraw(c); c.drawColor(Color.rgb(10,11,19)); rects.clear(); labels.clear();
-            float w=getWidth(), h=getHeight(); float pad=5, gap=5; float rowH=Math.max(42,(h-12*2-gap*3)/4f); String[][] rows=symbols?sym:letters;
+            float w=getWidth(), h=getHeight(); float pad=5, gap=5; float rowH=(h-12-gap*3)/4f; String[][] rows=symbols?sym:letters;
             for(int r=0;r<rows.length;r++){
                 String[] row=rows[r]; float keyW=(w-pad*2-gap*(row.length-1))/row.length; float offset=pad;
-                if(r==1 && !symbols) offset=pad+keyW*.45f;
-                if(r==1 && !symbols) keyW=(w-pad*2-gap*(row.length-1)-keyW*.9f)/row.length;
+                if(r==1 && !symbols) { offset=pad+keyW*.45f; keyW=(w-pad*2-gap*(row.length-1)-keyW*.9f)/row.length; }
                 if(r==3){
                     float[] widths={1.5f,0.8f,0.8f,2.4f,0.8f,1.5f}; float total=0; for(float a:widths)total+=a; float unit=(w-pad*2-gap*5)/total;
                     for(int i=0;i<row.length;i++){float kw=unit*widths[i]; drawKey(c,row[i],offset,r,kw,rowH,gap); offset+=kw+gap;} continue;
@@ -52,7 +59,7 @@ public class RgbInputMethodService extends InputMethodService {
         @Override public boolean onTouchEvent(MotionEvent e){ if(e.getAction()!=MotionEvent.ACTION_UP)return true; float x=e.getX(),y=e.getY(); for(int i=0;i<rects.size();i++) if(rects.get(i).contains(x,y)){ press(labels.get(i)); invalidate(); return true;} return true; }
         void press(String s){ InputConnection ic=getCurrentInputConnection(); if(s.equals("?123")){symbols=true;invalidate();return;} if(s.equals("ABC")){symbols=false;invalidate();return;} if(s.equals("⇧")){shifted=!shifted;invalidate();return;} if(ic==null)return;
             if(s.equals("⌫")){ic.deleteSurroundingText(1,0);return;} if(s.equals("↵")){ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_DOWN,KeyEvent.KEYCODE_ENTER));ic.sendKeyEvent(new KeyEvent(KeyEvent.ACTION_UP,KeyEvent.KEYCODE_ENTER));return;}
-            if(s.equals("English")){return;} if(s.equals("☻")){ic.commitText("😊",1);return;} if(s.equals(",")||s.equals(".")){ic.commitText(s,1);return;}
+            if(s.equals("English")){ic.commitText(" ",1);return;} if(s.equals("☻")){ic.commitText("😊",1);return;} if(s.equals(",")||s.equals(".")){ic.commitText(s,1);return;}
             if(s.length()==1){ic.commitText(shifted?s.toUpperCase():s,1); if(shifted)shifted=false;}
         }
     }
